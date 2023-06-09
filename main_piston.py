@@ -274,11 +274,10 @@ if __name__ == "__main__":
 
         # Step 3-5: collect n_sample_traj trajectories and find average occupancy measure
         for traj_id in range(n_sample_traj):
-            next_obs = env.reset()
+            next_obs, infos = env.reset()
 
             for step in range(0, max_cycles):
                 global_step += 1
-
                 obs = utils.batchify_obs(next_obs, device)
 
                 with torch.no_grad():
@@ -342,7 +341,7 @@ if __name__ == "__main__":
             reset = True
             for q_step in range(n_sample_Q_steps):
                 if reset:
-                    next_obs = env.reset()
+                    next_obs, infos = env.reset()
                     reset = False
                 obs = utils.batchify_obs(next_obs, device)
 
@@ -565,7 +564,7 @@ if __name__ == "__main__":
                 total_test_episode_return = torch.zeros(num_agents, device=device)
                 for sample_id in range(3):
                     frames = []
-                    next_obs = env.reset()
+                    next_obs, infos = env.reset()
 
                     for step in range(0, max_cycles):
                         img = Image.fromarray(env.render())

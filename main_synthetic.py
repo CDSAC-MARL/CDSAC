@@ -23,16 +23,15 @@ from utils import gather_actions, gather_next_actions, gather_critic_score, get_
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, default="attn", help="model architecture")
-    parser.add_argument("--gym-id", type=str, default="synthetic-v1",
-                        help="the id of the gym environment")
+    parser.add_argument("--wandb-tag", type=str, default=None, help="Tag for wandb")
+    parser.add_argument("--run-note", type=str, default=None, help="model architecture")
     parser.add_argument("--max-cycles", type=int, default=125, help="maximum number of redeploy steps")
     parser.add_argument("--test-every", type=int, default=20, help="evaluation frequency")
     parser.add_argument("--actor-lr", type=float, default=1e-3,
                         help="the learning rate of the optimizer")
     parser.add_argument("--critic-lr", type=float, default=1e-3,
                         help="the learning rate of the optimizer")
-    parser.add_argument("--seed", type=int, default=-1,
+    parser.add_argument("--seed", type=int, default=1,
                         help="seed of the experiment")
     parser.add_argument("--total-timesteps", type=int, default=400,
                         help="total timesteps of the experiments")
@@ -40,11 +39,12 @@ def parse_args():
                         help="if toggled, `torch.backends.cudnn.deterministic=False`")
     parser.add_argument("--track", action='store_true',
                         help="if toggled, this experiment will be tracked with Weights and Biases")
+    parser.add_argument("--cpu", action='store_true', help="if toggled, use cpu only")
 
     # Algorithm specific arguments
     parser.add_argument("--target-network-frequency", type=int, default=1,
                         help="how often to update the target Q networks")
-    parser.add_argument("--tau", type=float, default=0.005,
+    parser.add_argument("--tau", type=float, default=0.05,
                         help="how much to update the target Q networks each time")
     parser.add_argument("--gamma", type=float, default=0.99,
                         help="the discount factor gamma")
@@ -57,7 +57,7 @@ def parse_args():
     parser.add_argument("--num-agents", type=int, default=10, help="total number of agents")
     parser.add_argument("--n-obs-neighbors", type=int, default=2, help="neighborhood size (kappa)")
     parser.add_argument("--eta-mu", type=float, default=0, help="constraint weight")
-    parser.add_argument("--entropy-constraint", type=float, default=1, help="rhs of constraint")
+    parser.add_argument("--rhs", type=float, default=1, help="rhs of constraint")
 
     args = parser.parse_args()
     return args
@@ -122,24 +122,26 @@ if __name__ == "__main__":
     num_agents = args.num_agents
     dual_mu = 0.1
     eta_mu = args.eta_mu
-    entropy_constraint = args.entropy_constraint
+    entropy_constraint = args.rhs
     n_sample_Q_steps = n_sample_Q_traj * max_cycles
     run_name = f"syn_{num_agents}AG_N{n_obs_neighbors}_Eta{eta_mu}_rhs{entropy_constraint}_seed{args.seed}" \
                f"_{utils.name_with_datetime()}"
+    if args.run_note is not None:
+        run_name += f'_{args.run_note}'
     np.set_printoptions(precision=4)
     np.set_printoptions(suppress=True)
     torch.backends.cudnn.benchmark = True
     torch.set_default_dtype(torch.float32)
 
-    # TRY NOT TO MODIFY: seeding
-    if args.seed != -1:
-        random.seed(args.seed)
-        np.random.seed(args.seed)
-        torch.manual_seed(args.seed)
-        torch.backends.cudnn.deterministic = args.torch_deterministic
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    torch.backends.cudnn.deterministic = args.torch_deterministic
 
-    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    device = torch.device("cpu")
+    if args.cpu:
+        device = torch.device("cpu")
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # env setup
     env = parallel_env(
@@ -153,7 +155,7 @@ if __name__ == "__main__":
     n_piston_positions = 2
 
     if args.track:
-        wandb_tags = []
+        wandb_tags = [] if args.wandb_tag is None else [args.wandb_tag]
         wandb.init(entity="ANONYMOUS",
                    project="ANONYMOUS",
                    name=run_name,
@@ -461,19 +463,9 @@ if __name__ == "__main__":
             actor_optimizer[agent_id].step()
 
             if args.track and agent_id % 5 == 0:
-                # TRY NOT TO MODIFY: record rewards for plotting purposes
                 writer.add_scalar(f"losses/agent_{agent_id}_policy_loss", pg_loss.item(), global_step)
                 writer.add_scalar(f"losses/agent_{agent_id}_critic1_score", average_critic1_score, global_step)
                 writer.add_scalar(f"losses/agent_{agent_id}_critic2_score", average_critic2_score, global_step)
-
-            """
-            if (update + 1) % save_every_step == 0:
-                utils.save_checkpoint({'global_step': global_step,
-                                       'state_dict': agent.state_dict(),
-                                       'optim_dict': optim.state_dict()},
-                                      global_step=global_step,
-                                      checkpoint=f"runs/{run_name}")
-            """
 
         if args.track and (update + 1) % test_every_step == 0:
             with torch.no_grad():
